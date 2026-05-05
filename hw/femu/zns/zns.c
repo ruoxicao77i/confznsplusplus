@@ -1671,6 +1671,7 @@ static uint64_t zns_advance_status_finish(ZNS *zns, NvmeRequest *req){
     if(pages_to_write <= FINISH_BLOCK_SIZE){
         zone_finish_initial[logical_zone_idx] = 0;
     }
+    pages_to_write = pages_to_write > FINISH_BLOCK_SIZE ? FINISH_BLOCK_SIZE : pages_to_write;
 
     // Nothing to write, but there is some RTT latency account for that
     if (!pages_to_write || pages_to_write == n->zone_capacity) {
