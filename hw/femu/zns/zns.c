@@ -3,7 +3,7 @@
 #include <signal.h>
 
 #define ZNS_EXTERNAL_PAGE_SIZE (4 * KiB)  // Exposed through NVMe
-#define ZNS_INTERNAL_PAGE_SIZE (16 * KiB) // Internal mapped size, the flash page size
+#define ZNS_INTERNAL_PAGE_SIZE (4 * KiB) // Internal mapped size, the flash page size
 #define ZNS_PAGE_PARALLELISM (ZNS_INTERNAL_PAGE_SIZE / ZNS_EXTERNAL_PAGE_SIZE) // How much parallel I/O fits in one flash page
 #define ZNS_ZASL_SIZE_BYTES (1 * MiB)
 #define ZNS_ZONE_SIZE_BYTES (2 * GiB)
@@ -1661,9 +1661,16 @@ static uint64_t zns_advance_status_finish(ZNS *zns, NvmeRequest *req){
     // Get pages to write
     zns_get_mgmt_zone_slba_idx(n, cmd, &slba, &logical_zone_idx, &physical_zone_idx);
     NvmeZone *logical_zone  = &n->zvtable->entries[logical_zone_idx].logical_zone;
-    uint64_t pages_to_write = n->zone_capacity - (logical_zone->w_ptr - logical_zone->d.zslba);
 
-    pages_to_write = pages_to_write > FINISH_BLOCK_SIZE ? FINISH_BLOCK_SIZE : pages_to_write;
+    static uint64_t zone_finish_initial[64] = {0};
+    uint64_t pages_to_write = n->zone_capacity - (logical_zone->w_ptr - logical_zone->d.zslba);
+    if(zone_finish_initial[logical_zone_idx] == 0){
+        femu_log("[FINISH] zone:%u pages_to_write: %lu\n", logical_zone_idx, pages_to_write);
+        zone_finish_initial[logical_zone_idx] = pages_to_write;
+    }
+    if(pages_to_write <= FINISH_BLOCK_SIZE){
+        zone_finish_initial[logical_zone_idx] = 0;
+    }
 
     // Nothing to write, but there is some RTT latency account for that
     if (!pages_to_write || pages_to_write == n->zone_capacity) {
@@ -1966,8 +1973,8 @@ static int zns_init_zone_cap(FemuCtrl *n)
     n->zone_size_bs = spp->zone_size;
     n->zone_cap_bs = spp->zone_cap_param;
     n->cross_zone_read = true;
-    n->max_active_zones = 0;
-    n->max_open_zones = 0;
+    n->max_active_zones = 32;
+    n->max_open_zones = 32;
     n->zd_extension_size = 0;
 
     return 0;
